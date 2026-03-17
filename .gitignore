@@ -1,3 +1,4 @@
 test.json
 tmp
 .DS_Store
+.envrc
