@@ -58,13 +58,15 @@ func (s *Server) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create a new Automerge doc and map the Go struct values into it
 	doc := automerge.New()
-	_ = doc.Path("ID").Set(issue.ID)
-	_ = doc.Path("Key").Set(issue.Key)
+	_ = doc.Path("id").Set(issue.ID)
+	_ = doc.Path("key").Set(issue.Key)
 
 	if issue.Fields != nil {
-		_ = doc.Path("Fields").Set(issue.Fields)
+		fPath := doc.Path("fields")
+		for k, v := range issue.Fields {
+			_ = fPath.Path(k).Set(v)
+		}
 	}
 
 	if err := s.store.Save(issue.ID, doc); err != nil {
@@ -144,4 +146,23 @@ func (s *Server) DeleteIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// WithCORS is a middleware that injects CORS headers and handles OPTIONS preflight requests.
+func WithCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "*") // Change "*" to specific domains in production
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, Authorization")
+
+		// Intercept and handle preflight OPTIONS requests
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Pass down the request to the actual multiplexer/handler
+		next.ServeHTTP(w, r)
+	})
 }

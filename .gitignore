@@ -3,3 +3,4 @@ tmp
 .DS_Store
 .envrc
 data
+frontend/node_modules

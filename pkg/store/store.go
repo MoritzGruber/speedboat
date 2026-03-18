@@ -38,6 +38,20 @@ func (s *FileStore) Save(id string, doc *automerge.Doc) error {
 	return os.WriteFile(s.path(id), data, 0644)
 }
 
+// BatchUpsert saves multiple Automerge documents to the file system in a single locked operation.
+func (s *FileStore) BatchUpsert(docs map[string]*automerge.Doc) error {
+	s.m.Lock()
+	defer s.m.Unlock()
+
+	for id, doc := range docs {
+		data := doc.Save()
+		if err := os.WriteFile(s.path(id), data, 0644); err != nil {
+			return fmt.Errorf("failed to write file for id %s: %w", id, err)
+		}
+	}
+	return nil
+}
+
 // Load retrieves an Automerge document from the file system.
 func (s *FileStore) Load(id string) (*automerge.Doc, error) {
 	s.m.RLock()
