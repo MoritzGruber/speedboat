@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/MoritzGruber/jaj.git/pkg/connector"
-	"github.com/MoritzGruber/jaj.git/pkg/engine"
+	"github.com/MoritzGruber/speedboat.git/pkg/api"
+	"github.com/MoritzGruber/speedboat.git/pkg/connector"
+	"github.com/MoritzGruber/speedboat.git/pkg/engine"
+	"github.com/MoritzGruber/speedboat.git/pkg/store"
 )
 
 func main() {
@@ -67,4 +69,21 @@ func main() {
 		"key", updatedIssue.Key,
 		"jsonResponse", string(fullJSON),
 	)
+
+	// Initialize the file-based Automerge store
+	store, err := store.NewFileStore("./data/storage")
+	if err != nil {
+		slog.Error("Failed to initialize store", "error", err)
+		return
+	}
+
+	// Create a Go 1.22 compliant Multiplexer and register the API routes
+	mux := http.NewServeMux()
+	server := api.NewServer(store)
+	server.RegisterRoutes(mux)
+
+	slog.Info("Starting server on :8080...")
+	if err := http.ListenAndServe(":8080", mux); err != nil {
+		slog.Error("Server failed", "error", err)
+	}
 }

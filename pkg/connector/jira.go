@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/MoritzGruber/jaj.git/pkg/engine"
+	"github.com/MoritzGruber/speedboat.git/pkg/engine"
 )
 
 // SearchResults represents the response from the /rest/api/2/search endpoint.
