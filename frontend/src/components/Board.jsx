@@ -1,13 +1,17 @@
+// frontend/src/components/Board.jsx
 import { useState } from 'react'
 
-const STATUSES      = ['open', 'in-progress', 'review', 'closed']
-const STATUS_LABEL  = { 'open': 'Open', 'in-progress': 'In Progress', 'review': 'Review', 'closed': 'Closed' }
+const STATUSES     = ['DRAFT', 'Refinement', 'In Progress', 'Done'] // Match Jira exactly
+const STATUS_LABEL = { 'DRAFT': 'Draft', 'Refinement': 'Refinement', 'In Progress': 'Active', 'Done': 'Closed' }
+
+// FIX: Update color mapping to use the new Jira statuses
 const STATUS_COLOR  = {
-  'open':        'var(--color-open)',
-  'in-progress': 'var(--color-in-progress)',
-  'review':      'var(--color-review)',
-  'closed':      'var(--color-closed)',
+  'DRAFT':       'var(--color-open)',
+  'Refinement':  'var(--color-in-progress)',
+  'In Progress': 'var(--color-review)',
+  'Done':        'var(--color-closed)',
 }
+
 const PRI_COLOR = {
   low:      'var(--color-low)',
   medium:   'var(--color-medium)',
@@ -16,8 +20,13 @@ const PRI_COLOR = {
 }
 
 function toBoard(tickets) {
+  console.log('[Board] toBoard running with tickets:', tickets) // <-- LOG ADDED
+
   const map = Object.fromEntries(STATUSES.map(s => [s, []]))
   for (const t of tickets) {
+    if (!map[t.status]) {
+      console.warn(`[Board] Warning: Ticket ${t.id} has unknown status "${t.status}" and will be hidden!`)
+    }
     const col = map[t.status] ?? (map[t.status] = [])
     col.push(t)
   }

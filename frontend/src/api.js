@@ -4,7 +4,6 @@ export function getBaseURL()      { return BASE }
 export function configure(url)    { BASE = url.replace(/\/$/, '') }
 
 async function req(method, path, body) {
-  // We removed the '/api' prefix because cmd/main.go mounts directly to root
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: body != null ? { 'Content-Type': 'application/json' } : {},
@@ -13,7 +12,6 @@ async function req(method, path, body) {
   })
   if (res.status === 204) return null
   
-  // Handle empty bodies gracefully
   const text = await res.text()
   const json = text ? JSON.parse(text) : {}
   
@@ -26,8 +24,26 @@ export const api = {
 
   listTickets: async () => {
     const issues = await req('GET', '/issues')
-    // Flatten the backend Issue struct into the frontend Ticket struct
-    return (issues || []).map(i => ({ id: i.id, ...i.fields }))
+    console.log('[API] Raw backend response:', issues)
+
+    const mapped = (issues || []).map(i => {
+      // Jira often nests field values inside objects
+      const rawStatus = i.fields?.status
+      const statusStr = (typeof rawStatus === 'object' && rawStatus !== null) ? rawStatus.name : (rawStatus || 'DRAFT')
+      
+      const rawPriority = i.fields?.priority
+      const priorityStr = (typeof rawPriority === 'object' && rawPriority !== null) ? rawPriority.name : (rawPriority || 'Medium')
+      
+      return { 
+        id: i.id, 
+        ...i.fields,
+        status: statusStr,                     // Extract string safely
+        priority: priorityStr.toLowerCase()    // Extract string safely
+      }
+    })
+
+    console.log('[API] Mapped tickets:', mapped)
+    return mapped
   },
   
   createTicket: (t) => req('POST', '/issues', { id: t.id, key: t.id, fields: t }),

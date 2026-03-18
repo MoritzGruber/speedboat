@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react'
 import { api } from '../api.js'
 
+// ── TicketModal ───────────────────────────────────────────────────────────────
+
+const STATUSES   = ['DRAFT', 'Refinement', 'In Progress', 'Done'] // FIX: Match Jira
+const PRIORITIES = ['low', 'medium', 'high', 'critical']
+
 // ── Shared primitives ─────────────────────────────────────────────────────────
 
 function Overlay({ onClose, children }) {
@@ -20,16 +25,12 @@ function Field({ label, children }) {
   )
 }
 
-// ── TicketModal ───────────────────────────────────────────────────────────────
-
-const STATUSES   = ['open', 'in-progress', 'review', 'closed']
-const PRIORITIES = ['low', 'medium', 'high', 'critical']
 
 export function TicketModal({ mode, ticket, defaultStatus, onSave, onDelete, onClose }) {
   const [form, setForm] = useState({
-    title:       ticket?.title        ?? '',
+   title:       ticket?.title        ?? '',
     description: ticket?.description  ?? '',
-    status:      ticket?.status       ?? defaultStatus ?? 'open',
+    status:      ticket?.status       ?? defaultStatus ?? 'DRAFT',
     priority:    ticket?.priority     ?? 'medium',
     tags:        (ticket?.tags        ?? []).join(', '),
     assignees:   (ticket?.assignees   ?? []).join(', '),

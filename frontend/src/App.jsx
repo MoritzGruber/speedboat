@@ -29,15 +29,18 @@ export default function App() {
       const savedUrl = await dbGetSetting('api_url')
       if (savedUrl) configure(savedUrl)
       
-      const ts = await dbGetTicketsByProject(PROJ_ID)
-      setTickets(ts)
+      const initialTickets = await dbGetTicketsByProject(PROJ_ID)
+      setTickets(initialTickets)
     }
     init()
 
     const engine = new SyncEngine({
       onStatusChange: setSyncStatus,
       onDataChange: async () => {
-        setTickets(await dbGetTicketsByProject(PROJ_ID))
+        // FIX: Fetch fresh tickets and log them properly
+        const freshTickets = await dbGetTicketsByProject(PROJ_ID)
+        console.log('[App] Data changed! New tickets from DB:', freshTickets) 
+        setTickets(freshTickets)
       },
     })
     engine.start()
@@ -56,7 +59,7 @@ export default function App() {
       comments:    [],
       tags:        [],
       assignees:   [],
-      status:      'open',
+      status:      'DRAFT', // FIX: Fallback to Jira status instead of 'open'
       priority:    'medium',
       ...data,
     }
@@ -132,7 +135,8 @@ export default function App() {
             <SyncBadge status={syncStatus} />
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-primary" onClick={() => setModal({ type: 'ticket', defaultStatus: 'open' })}>+ New ticket</button>
+            {/* FIX: Default button state to DRAFT instead of open */}
+            <button className="btn btn-primary" onClick={() => setModal({ type: 'ticket', defaultStatus: 'DRAFT' })}>+ New ticket</button>
           </div>
         </header>
 

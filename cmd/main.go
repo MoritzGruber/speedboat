@@ -37,8 +37,7 @@ func main() {
 	slog.Info("Fetching initial issues from Jira...", "project", projectKey)
 
 	// Build the search URL. Adjust maxResults if you expect more than 50 initial tickets.
-	searchURL := fmt.Sprintf("%s/rest/api/2/search?jql=project=%s&maxResults=50", jiraBaseURL, projectKey)
-
+	searchURL := fmt.Sprintf("%s/rest/api/2/search?jql=project=%s&maxResults=50&fields=summary,description,status,priority", jiraBaseURL, projectKey)
 	req, err := http.NewRequest("GET", searchURL, nil)
 	if err != nil {
 		slog.Error("Failed to create request", "error", err)
@@ -75,28 +74,48 @@ func main() {
 	for _, issue := range searchResult.Issues {
 		doc := automerge.New()
 
-		_ = doc.Path("id").Set(issue.ID)
-		_ = doc.Path("key").Set(issue.Key)
+		_ = doc.Path("ID").Set(issue.ID)
+		_ = doc.Path("Key").Set(issue.Key)
 
-		// Explicitly create the Fields map in the CRDT
-		fields := doc.Path("fields")
+		fields := doc.Path("Fields")
 		if issue.Fields != nil {
-			for k, v := range issue.Fields {
-				// This ensures every key from Jira is mirrored in the Automerge Map
-				_ = fields.Path(k).Set(v)
+			// Extract title from Jira's "summary"
+			title := ""
+			if summary, ok := issue.Fields["summary"].(string); ok {
+				title = summary
 			}
 
-			// Ensure "status" and "priority" exist even if Jira doesn't provide them
-			// to prevent the frontend from breaking.
-			if _, ok := issue.Fields["status"]; !ok {
-				_ = fields.Path("status").Set("open")
+			// Extract description
+			desc := ""
+			if description, ok := issue.Fields["description"].(string); ok {
+				desc = description
 			}
-			if _, ok := issue.Fields["priority"]; !ok {
-				_ = fields.Path("priority").Set("medium")
+
+			// Flatten Jira's nested status object into a simple string
+			statusName := "open" // default fallback
+			if statusObj, ok := issue.Fields["status"].(map[string]interface{}); ok {
+				if name, ok := statusObj["name"].(string); ok {
+					statusName = name
+				}
 			}
+
+			// Flatten Jira's nested priority object into a simple string
+			priorityName := "medium" // default fallback
+			if prioObj, ok := issue.Fields["priority"].(map[string]interface{}); ok {
+				if name, ok := prioObj["name"].(string); ok {
+					priorityName = name
+				}
+			}
+
+			// Set the clean, flattened scalar values into the Automerge document
+			_ = fields.Path("title").Set(title)
+			_ = fields.Path("summary").Set(title) // Kept for safety if UI expects summary
+			_ = fields.Path("description").Set(desc)
+			_ = fields.Path("status").Set(statusName)
+			_ = fields.Path("priority").Set(priorityName)
 		}
 
-		docsToSave[issue.ID] = doc // Use ID as the filename to match API expectations
+		docsToSave[issue.ID] = doc
 	}
 
 	// 4. BatchUpsert the documents into the local FileStore

@@ -63,7 +63,7 @@ func (s *Server) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	_ = doc.Path("key").Set(issue.Key)
 
 	if issue.Fields != nil {
-		fPath := doc.Path("fields")
+		fPath := doc.Path("Fields")
 		for k, v := range issue.Fields {
 			_ = fPath.Path(k).Set(v)
 		}
