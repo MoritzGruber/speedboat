@@ -4,20 +4,23 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/MoritzGruber/speedboat.git/pkg/connector"
 	"github.com/MoritzGruber/speedboat.git/pkg/engine"
 	"github.com/MoritzGruber/speedboat.git/pkg/store"
 	"github.com/automerge/automerge-go"
 )
 
 type Server struct {
-	store *store.FileStore
+	store     *store.FileStore
+	connector *connector.JiraCollector // Inject the connector
 }
 
-// NewServer creates a new API server instance tied to the file store.
-func NewServer(store *store.FileStore) *Server {
-	return &Server{store: store}
+// Update the constructor
+func NewServer(store *store.FileStore, conn *connector.JiraCollector) *Server {
+	return &Server{store: store, connector: conn}
 }
 
+// RegisterRoutes registers the API routes to a standard mux (Go 1.22+ recommended).
 // RegisterRoutes registers the API routes to a standard mux (Go 1.22+ recommended).
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /issues", s.ListIssues)
@@ -114,6 +117,9 @@ func (s *Server) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// NEW: Prepare a map for the Jira update
+	jiraFields := make(map[string]interface{})
+
 	// 3. Apply updates specifically to the Automerge document
 	if updateData.Key != "" {
 		_ = doc.Path("Key").Set(updateData.Key)
@@ -124,16 +130,34 @@ func (s *Server) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		fieldsPath := doc.Path("Fields")
 		for k, v := range updateData.Fields {
 			_ = fieldsPath.Path(k).Set(v)
+
+			// NEW: Map internal fields to Jira's schema if they are modified
+			if k == "title" {
+				jiraFields["summary"] = v
+			} else if k == "description" {
+				jiraFields["description"] = v
+			}
 		}
 	}
 
-	// 4. Save the modified document to sync state
+	// 4. Save the modified document locally to sync state
 	if err := s.store.Save(id, doc); err != nil {
-		http.Error(w, "Failed to save issue", http.StatusInternalServerError)
+		http.Error(w, "Failed to save issue locally", http.StatusInternalServerError)
 		return
 	}
 
-	// 5. Return updated state to the user
+	// NEW: 5. Push changes back to Jira
+	if len(jiraFields) > 0 {
+		_, err := s.connector.Update(id, engine.Issue{Fields: jiraFields})
+		if err != nil {
+			// Note: The local save worked, but Jira failed.
+			// You might want to log this or return a specific status code.
+			http.Error(w, "Saved locally but failed to sync to Jira", http.StatusBadGateway)
+			return
+		}
+	}
+
+	// 6. Return updated state to the user
 	updatedIssue, _ := automerge.As[*engine.Issue](doc.Root())
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(updatedIssue)

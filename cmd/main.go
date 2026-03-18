@@ -6,8 +6,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/MoritzGruber/speedboat.git/pkg/api"
+	"github.com/MoritzGruber/speedboat.git/pkg/connector"
 	"github.com/MoritzGruber/speedboat.git/pkg/engine"
 	"github.com/MoritzGruber/speedboat.git/pkg/store"
 	"github.com/automerge/automerge-go"
@@ -126,12 +128,73 @@ func main() {
 	}
 	// 4. Start the HTTP Server
 	mux := http.NewServeMux()
-	server := api.NewServer(fileStore)
+	jiraConn := &connector.JiraCollector{
+		BaseURL: jiraBaseURL,
+		Token:   personalAccessToken,
+		Client:  http.DefaultClient,
+	}
+
+	// Pass it to the server
+	server := api.NewServer(fileStore, jiraConn)
 	server.RegisterRoutes(mux)
+
+	go startPolling(fileStore, jiraConn)
+
 	handlerWithCORS := api.WithCORS(mux)
 
 	slog.Info("Starting server on :8080...")
 	if err := http.ListenAndServe(":8080", handlerWithCORS); err != nil {
 		slog.Error("Server failed", "error", err)
+	}
+}
+
+func startPolling(fileStore *store.FileStore, jiraConn *connector.JiraCollector) {
+	// Setup the 500ms ticker
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	// Optional but highly recommended: Modify the JQL to only fetch recently updated issues
+	// jiraConn.JQL = fmt.Sprintf("project=%s AND updated >= -1m", projectKey)
+
+	for range ticker.C {
+		issues, err := jiraConn.List()
+		if err != nil {
+			slog.Error("Polling Jira failed", "error", err)
+			continue
+		}
+
+		for _, issue := range issues {
+			// 1. Try to load the existing document
+			doc, err := fileStore.Load(issue.ID)
+			isNew := false
+
+			if err != nil {
+				// 2. If it doesn't exist locally, create a new one
+				doc = automerge.New()
+				_ = doc.Path("id").Set(issue.ID)
+				_ = doc.Path("key").Set(issue.Key)
+				isNew = true
+			}
+
+			// 3. Sync Jira fields into the Automerge document
+			fieldsPath := doc.Path("Fields")
+			if issue.Fields != nil {
+				if summary, ok := issue.Fields["summary"].(string); ok {
+					_ = fieldsPath.Path("title").Set(summary)
+					_ = fieldsPath.Path("summary").Set(summary)
+				}
+				if description, ok := issue.Fields["description"].(string); ok {
+					_ = fieldsPath.Path("description").Set(description)
+				}
+				// You can also sync status and priority here if needed
+			}
+
+			// 4. Save the updated or new document back to the FileStore
+			if err := fileStore.Save(issue.ID, doc); err != nil {
+				slog.Error("Failed to save polled issue to store", "id", issue.ID, "error", err)
+			} else if isNew {
+				slog.Info("Polled and created new issue locally", "key", issue.Key)
+			}
+		}
 	}
 }

@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MoritzGruber/speedboat.git/pkg/engine"
+	"github.com/automerge/automerge-go"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -753,6 +755,62 @@ func (sv *Server) handleListTickets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, tickets)
+}
+
+func (s *Server) UpdateIssue(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	doc, err := s.store.Load(id)
+	if err != nil {
+		http.Error(w, "Issue not found", http.StatusNotFound)
+		return
+	}
+
+	var updateData engine.Issue
+	if err := json.NewDecoder(r.Body).Decode(&updateData); err != nil {
+		http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+
+	// 1. Prepare payload for Jira
+	jiraFields := make(map[string]interface{})
+
+	if updateData.Fields != nil {
+		fieldsPath := doc.Path("Fields")
+		for k, v := range updateData.Fields {
+			// Update local Automerge document
+			_ = fieldsPath.Path(k).Set(v)
+
+			// Map to Jira fields
+			if k == "title" {
+				jiraFields["summary"] = v
+			} else if k == "description" {
+				jiraFields["description"] = v
+			}
+		}
+	}
+
+	// 2. Push to Jira if there are relevant fields to update
+	if len(jiraFields) > 0 {
+		jiraUpdate := engine.Issue{Fields: jiraFields}
+		_, err := s.jira.Update(id, jiraUpdate)
+		if err != nil {
+			// Decide if you want to fail the local write if Jira fails,
+			// or queue it for a retry. For now, we return an error.
+			http.Error(w, "Failed to update Jira: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+	}
+
+	// 3. Save local Automerge doc
+	if err := s.store.Save(id, doc); err != nil {
+		http.Error(w, "Failed to save issue locally", http.StatusInternalServerError)
+		return
+	}
+
+	updatedIssue, _ := automerge.As[*engine.Issue](doc.Root())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(updatedIssue)
 }
 
 func (sv *Server) handleCreateTicket(w http.ResponseWriter, r *http.Request) {
